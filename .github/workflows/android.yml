@@ -12,25 +12,24 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Baixar o código
+      - name: Baixar o codigo
         uses: actions/checkout@v4
 
-      - name: Preparar projeto (ZIP ou pasta)
+      - name: Preparar projeto
         run: |
           set -e
           if [ -f gradlew ] && [ -d app ]; then
-            echo "Projeto já está na raiz."
+            echo "Projeto na raiz"
           elif [ -d AegisNexus-Android ] && [ -f AegisNexus-Android/gradlew ]; then
-            echo "Projeto dentro de AegisNexus-Android — copiando para a raiz."
             cp -a AegisNexus-Android/. .
           else
             ZIP=$(ls -1 *.zip 2>/dev/null | head -1 || true)
             if [ -z "$ZIP" ]; then
-              echo "Não achei projeto Android nem ZIP."
+              echo "Sem projeto e sem ZIP"
               ls -la
               exit 1
             fi
-            echo "Encontrado ZIP: $ZIP — extraindo..."
+            echo "Extraindo $ZIP"
             unzip -o "$ZIP" -d _extract
             if [ -f _extract/gradlew ]; then
               cp -a _extract/. .
@@ -38,31 +37,18 @@ jobs:
               cp -a _extract/AegisNexus-Android/. .
             else
               FOUND=$(find _extract -name gradlew -type f | head -1)
-              if [ -n "$FOUND" ]; then
-                DIR=$(dirname "$FOUND")
-                cp -a "$DIR"/. .
-              else
-                echo "ZIP não contém gradlew."
-                find _extract -maxdepth 3 -type f | head -50
+              if [ -z "$FOUND" ]; then
+                echo "ZIP sem gradlew"
+                find _extract -maxdepth 3 -type f | head -40
                 exit 1
               fi
+              cp -a "$(dirname "$FOUND")"/. .
             fi
           fi
-
-          python3 - <<'PY'
-          open('gradlew', 'w').write(
-          '#!/bin/sh\n'
-          'cd "$(dirname "$0")" || exit 1\n'
-          'JAR="gradle/wrapper/gradle-wrapper.jar"\n'
-          'if [ ! -f "$JAR" ]; then echo "gradle-wrapper.jar missing" >&2; exit 1; fi\n'
-          'if [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/java" ]; then JAVACMD="$JAVA_HOME/bin/java"; else JAVACMD="java"; fi\n'
-          'exec "$JAVACMD" -Xmx64m -Xms64m -classpath "\( JAR" org.gradle.wrapper.GradleWrapperMain " \)@"\n'
-          )
-          PY
+          echo IyEvYmluL3NoCmNkICIkKGRpcm5hbWUgIiQwIikiIHx8IGV4aXQgMQpKQVI9ImdyYWRsZS93cmFwcGVyL2dyYWRsZS13cmFwcGVyLmphciIKaWYgWyAhIC1mICIkSkFSIiBdOyB0aGVuIGVjaG8gImdyYWRsZS13cmFwcGVyLmphciBtaXNzaW5nIiA+JjI7IGV4aXQgMTsgZmkKaWYgWyAtbiAiJEpBVkFfSE9NRSIgXSAmJiBbIC14ICIkSkFWQV9IT01FL2Jpbi9qYXZhIiBdOyB0aGVuIEpBVkFDTUQ9IiRKQVZBX0hPTUUvYmluL2phdmEiOyBlbHNlIEpBVkFDTUQ9ImphdmEiOyBmaQpleGVjICIkSkFWQUNNRCIgLVhteDY0bSAtWG1zNjRtIC1jbGFzc3BhdGggIiRKQVIiIG9yZy5ncmFkbGUud3JhcHBlci5HcmFkbGVXcmFwcGVyTWFpbiAiJEAiCg== | base64 -d > gradlew
           chmod +x gradlew
           test -f gradle/wrapper/gradle-wrapper.jar
-          echo "gradlew OK"
-          cat gradlew
+          head -5 gradlew
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -70,11 +56,31 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Instalar Android SDK (manual)
+      - name: Instalar Android SDK
         run: |
           set -e
           ANDROID_ROOT="$HOME/android-sdk"
           mkdir -p "$ANDROID_ROOT/cmdline-tools"
-          curl -fsSL -o /tmp/cmdtools.zip \
-            https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          unzip -q /tmp/cmdtools.zip -d "$ANDROID_
+          curl -fsSL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q /tmp/cmdtools.zip -d "$ANDROID_ROOT/cmdline-tools"
+          if [ -d "$ANDROID_ROOT/cmdline-tools/cmdline-tools" ]; then
+            mv "$ANDROID_ROOT/cmdline-tools/cmdline-tools" "$ANDROID_ROOT/cmdline-tools/latest"
+          fi
+          echo "ANDROID_HOME=$ANDROID_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_ROOT" >> "$GITHUB_ENV"
+          echo "$ANDROID_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_ROOT/platform-tools" >> "$GITHUB_PATH"
+          SDKMANAGER="$ANDROID_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --sdk_root="$ANDROID_ROOT" --licenses >/dev/null || true
+          "$SDKMANAGER" --sdk_root="$ANDROID_ROOT" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Compilar APK debug
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Disponibilizar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gabi-IA-v15.30-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
