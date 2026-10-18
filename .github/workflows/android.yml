@@ -20,15 +20,16 @@ jobs:
           set -e
           if [ -f gradlew ] && [ -d app ]; then
             echo "Projeto já está na raiz."
-            exit 0
-          fi
-          if [ -d AegisNexus-Android ] && [ -f AegisNexus-Android/gradlew ]; then
+          elif [ -d AegisNexus-Android ] && [ -f AegisNexus-Android/gradlew ]; then
             echo "Projeto dentro de AegisNexus-Android — copiando para a raiz."
             cp -a AegisNexus-Android/. .
-            exit 0
-          fi
-          ZIP=$(ls -1 *.zip 2>/dev/null | head -1 || true)
-          if [ -n "$ZIP" ]; then
+          else
+            ZIP=$(ls -1 *.zip 2>/dev/null | head -1 || true)
+            if [ -z "$ZIP" ]; then
+              echo "Não achei projeto Android nem ZIP."
+              ls -la
+              exit 1
+            fi
             echo "Encontrado ZIP: $ZIP — extraindo..."
             unzip -o "$ZIP" -d _extract
             if [ -f _extract/gradlew ]; then
@@ -46,11 +47,20 @@ jobs:
                 exit 1
               fi
             fi
-            exit 0
           fi
-          echo "Não achei projeto Android nem ZIP."
-          ls -la
-          exit 1
+
+          # Reescreve gradlew (o do ZIP tinha aspas quebradas)
+          printf '%s\n' \
+            '#!/bin/sh' \
+            'DIR=\( (CDPATH= cd -- " \)(dirname "$0")" && pwd)' \
+            'JAR="$DIR/gradle/wrapper/gradle-wrapper.jar"' \
+            'if [ ! -f "$JAR" ]; then echo "gradle-wrapper.jar missing" >&2; exit 1; fi' \
+            'if [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/java" ]; then JAVACMD="$JAVA_HOME/bin/java"; else JAVACMD=java; fi' \
+            'exec "$JAVACMD" -Xmx64m -Xms64m -classpath "\( JAR" org.gradle.wrapper.GradleWrapperMain " \)@"' \
+            > gradlew
+          chmod +x gradlew
+          test -f gradle/wrapper/gradle-wrapper.jar
+          echo "gradlew OK"
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -79,9 +89,6 @@ jobs:
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
-
-      - name: Dar permissão ao Gradle Wrapper
-        run: chmod +x gradlew
 
       - name: Compilar APK debug
         run: ./gradlew assembleDebug --no-daemon --stacktrace
