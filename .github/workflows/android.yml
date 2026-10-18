@@ -1,0 +1,78 @@
+name: Build Gabi IA APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Preparar projeto (ZIP ou pasta)
+        run: |
+          set -e
+          if [ -f gradlew ] && [ -d app ]; then
+            echo "Projeto já está na raiz."
+            exit 0
+          fi
+          if [ -d AegisNexus-Android ] && [ -f AegisNexus-Android/gradlew ]; then
+            echo "Projeto dentro de AegisNexus-Android — copiando para a raiz."
+            cp -a AegisNexus-Android/. .
+            exit 0
+          fi
+          ZIP=$(ls -1 *.zip 2>/dev/null | head -1 || true)
+          if [ -n "$ZIP" ]; then
+            echo "Encontrado ZIP: $ZIP — extraindo..."
+            unzip -o "$ZIP" -d _extract
+            if [ -f _extract/gradlew ]; then
+              cp -a _extract/. .
+            elif [ -d _extract/AegisNexus-Android ]; then
+              cp -a _extract/AegisNexus-Android/. .
+            else
+              FOUND=$(find _extract -name gradlew -type f | head -1)
+              if [ -n "$FOUND" ]; then
+                DIR=$(dirname "$FOUND")
+                cp -a "$DIR"/. .
+              else
+                echo "ZIP não contém gradlew."
+                find _extract -maxdepth 3 -type f | head -50
+                exit 1
+              fi
+            fi
+            exit 0
+          fi
+          echo "Não achei projeto Android nem ZIP."
+          ls -la
+          exit 1
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools, platforms;android-35, build-tools;35.0.0'
+
+      - name: Dar permissão ao Gradle Wrapper
+        run: chmod +x gradlew
+
+      - name: Compilar APK debug
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Disponibilizar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gabi-IA-v15.30-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
