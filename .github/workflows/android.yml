@@ -49,18 +49,20 @@ jobs:
             fi
           fi
 
-          # Reescreve gradlew (o do ZIP tinha aspas quebradas)
-          printf '%s\n' \
-            '#!/bin/sh' \
-            'DIR=\( (CDPATH= cd -- " \)(dirname "$0")" && pwd)' \
-            'JAR="$DIR/gradle/wrapper/gradle-wrapper.jar"' \
-            'if [ ! -f "$JAR" ]; then echo "gradle-wrapper.jar missing" >&2; exit 1; fi' \
-            'if [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/java" ]; then JAVACMD="$JAVA_HOME/bin/java"; else JAVACMD=java; fi' \
-            'exec "$JAVACMD" -Xmx64m -Xms64m -classpath "\( JAR" org.gradle.wrapper.GradleWrapperMain " \)@"' \
-            > gradlew
+          python3 - <<'PY'
+          open('gradlew', 'w').write(
+          '#!/bin/sh\n'
+          'cd "$(dirname "$0")" || exit 1\n'
+          'JAR="gradle/wrapper/gradle-wrapper.jar"\n'
+          'if [ ! -f "$JAR" ]; then echo "gradle-wrapper.jar missing" >&2; exit 1; fi\n'
+          'if [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/java" ]; then JAVACMD="$JAVA_HOME/bin/java"; else JAVACMD="java"; fi\n'
+          'exec "$JAVACMD" -Xmx64m -Xms64m -classpath "\( JAR" org.gradle.wrapper.GradleWrapperMain " \)@"\n'
+          )
+          PY
           chmod +x gradlew
           test -f gradle/wrapper/gradle-wrapper.jar
           echo "gradlew OK"
+          cat gradlew
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -75,28 +77,4 @@ jobs:
           mkdir -p "$ANDROID_ROOT/cmdline-tools"
           curl -fsSL -o /tmp/cmdtools.zip \
             https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          unzip -q /tmp/cmdtools.zip -d "$ANDROID_ROOT/cmdline-tools"
-          if [ -d "$ANDROID_ROOT/cmdline-tools/cmdline-tools" ]; then
-            mv "$ANDROID_ROOT/cmdline-tools/cmdline-tools" "$ANDROID_ROOT/cmdline-tools/latest"
-          fi
-          echo "ANDROID_HOME=$ANDROID_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$ANDROID_ROOT" >> "$GITHUB_ENV"
-          echo "$ANDROID_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          echo "$ANDROID_ROOT/platform-tools" >> "$GITHUB_PATH"
-          SDKMANAGER="$ANDROID_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          yes | "$SDKMANAGER" --sdk_root="$ANDROID_ROOT" --licenses >/dev/null || true
-          "$SDKMANAGER" --sdk_root="$ANDROID_ROOT" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
-
-      - name: Compilar APK debug
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
-
-      - name: Disponibilizar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gabi-IA-v15.30-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 30
+          unzip -q /tmp/cmdtools.zip -d "$ANDROID_
